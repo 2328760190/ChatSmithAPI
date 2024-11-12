@@ -346,7 +346,7 @@ public class ChatSmith {
                     e.printStackTrace();
                     sendError(exchange, "内部服务器错误: " + e.getMessage());
                 }
-            }, Executors.newVirtualThreadPerTaskExecutor());
+            }, Executors.newSingleThreadExecutor());
         }
 
         private void handleVisionStreamResponse(HttpExchange exchange, JSONObject visionJson) throws IOException {
