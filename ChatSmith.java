@@ -62,7 +62,7 @@ public class ChatSmith {
         if (args.length > 0) {
             port = Integer.parseInt(args[0]);
         }
-        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor(); // 使用虚拟线程
+        ExecutorService executor = Executors.newSingleThreadExecutor();
 
         HttpServer server = createHttpServer(port);
         server.createContext("/v1/chat/completions", new CompletionHandler());
