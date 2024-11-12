@@ -8,7 +8,9 @@
 本项目是一个类 OpenAI 服务端程序，模拟OpenAI API标准的响应，无需提供Authorization，可与多种前端应用（如 NextChat、ChatBox 等）无缝集成
 
 
-只支持支持gpt-4o-mini-2024-07-18✅（传其他的模型没有用，返回的还是4o-mini），只支持非流式传输，虽然本项目实现了stream，但事实上是一次性全部回传的，效果只能讲究
+只支持支持gpt-4o-mini-2024-07-18✅（传其他的模型没有用，返回的还是4o-mini），只支持非流式传输，虽然本项目实现了stream，但事实上是一次性全部回传的，效果只能将就
+
+需要其他模型可移步本人另一个项目👉https://github.com/patchescamerababy/ChatOnAPI
 
 几乎无限使用，几乎没有频率限制
 
