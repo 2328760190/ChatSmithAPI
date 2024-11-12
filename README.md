@@ -2,7 +2,7 @@
 
 由👇分析而来
 
-	https://play.google.com/store/apps/details?id=ai.chat.gpt.bot
+	https://play.google.com/store/apps/details?id=com.smartwidgetlabs.chatgpt
 
 
 本项目是一个类 OpenAI 服务端程序，模拟OpenAI API标准的响应，无需提供Authorization，可与多种前端应用（如 NextChat、ChatBox 等）无缝集成
