@@ -552,7 +552,6 @@ public class ChatSmith {
                 connection.setRequestProperty("X-Vulcan-Request-ID", "914948789" + Instant.now().getEpochSecond());
                 connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
                 connection.setRequestProperty("Accept-Encoding", "gzip");
-                connection.setRequestProperty("Host", "api.vulcanlabs.co");
                 connection.setRequestProperty("Connection", "Keep-Alive");
 
                 try (OutputStream outputStream = connection.getOutputStream();
