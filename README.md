@@ -12,8 +12,6 @@
 
 传其他的模型返回的还是4o-mini，他的API只支持非流式传输，虽然本项目实现了stream，但事实上是一次性全部回传的，效果只能将就
 
-需要其他模型可移步本人另一个项目👉https://github.com/patchescamerababy/ChatOnAPI
-
 几乎无限使用，几乎没有频率限制
 
 支持对话、识图
