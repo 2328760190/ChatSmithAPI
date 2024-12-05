@@ -1,38 +1,31 @@
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
 import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Iterator;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.GZIPInputStream;
 
-import javax.imageio.ImageIO;
-import org.imgscalr.Scalr;
+import org.apache.commons.imaging.*;
 
 import org.json.*;
+
 import com.sun.net.httpserver.*;
 
 public class ChatSmith {
     public static int port = 80;
     private static String accessToken = null;
     private static long tokenExpiration = 0;
-    private static final String IMAGE_DIRECTORY = "images";
-    public static int MAX_IMAGE_WIDTH = 2000;
-    public static int MAX_IMAGE_HEIGHT = 2000;
-    private static final int MAX_IMAGES = 100; // 最大保存图片数量
-
-    /**
-     * 创建并返回一个HttpServer实例，尝试绑定到指定端口
-     */
+    public static final int MAX_IMAGE_WIDTH = 2000;
+    public static final int MAX_IMAGE_HEIGHT = 2000;
+    private static final String VULCAN_APPLICATION_ID = "com.smartwidgetlabs.chatgpt";
+    private static final String USER_AGENT = "Chat Smith Android, Version 3.9.9(696)";
     public static HttpServer createHttpServer(int initialPort) throws IOException {
         int port = initialPort;
         HttpServer server = null;
 
-        // 循环尝试找到一个可用的端口
         while (server == null) {
             try {
                 server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
@@ -41,7 +34,7 @@ public class ChatSmith {
             } catch (BindException e) {
                 if (port < 65535) {
                     System.out.println("Port " + port + " is already in use. Trying port " + (port + 1));
-                    port++; // 端口号加1
+                    port++;
                 } else {
                     System.err.println("All ports from " + initialPort + " to 65535 are in use. Exiting.");
                     System.exit(1);
@@ -51,46 +44,25 @@ public class ChatSmith {
         return server;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
 
-        // 创建图片存储目录（如果不存在）
-        createImageDirectory();
         int port = 80;
 
         if (args.length > 0) {
             port = Integer.parseInt(args[0]);
         }
-        ExecutorService executor = Executors.newFixedThreadPool(10); // 线程池处理请求
+        ExecutorService executor = Executors.newFixedThreadPool(10);
+        try {
+            HttpServer server = createHttpServer(port);
+            server.createContext("/v1/chat/completions", new CompletionHandler());
+            server.createContext("/v1/images/generations", new TextToImageHandler());
+            server.createContext("/", new CompletionHandler());
 
-        HttpServer server = createHttpServer(port);
-        server.createContext("/v1/chat/completions", new CompletionHandler());
-        server.createContext("/", new CompletionHandler());
-        server.createContext("/v1/images/generations", new TextToImageHandler()); // 新增
-
-        server.setExecutor(executor); // 分配线程池给服务器
-        server.start();
-    }
-
-    private static void createImageDirectory() throws IOException {
-        Path imageDir = Paths.get(IMAGE_DIRECTORY);
-        if (!Files.exists(imageDir)) {
-            Files.createDirectory(imageDir);
-            System.out.println("Created image directory at: " + imageDir.toAbsolutePath());
+            server.setExecutor(executor);
+            server.start();
+        } catch (IOException e) {
+            System.err.println("Failed to start server: " + e.getMessage());
         }
-    }
-
-    private static int findAvailablePort(int startingPort) {
-        int port = startingPort;
-        for (int i = 0; i < 65535; i++) {
-            try (ServerSocket socket = new ServerSocket(port)) {
-                System.out.println("Server is finally starting on port: " + port);
-                return port;
-            } catch (IOException e) {
-                System.err.println("Port " + port + " is in use.");
-                port++;
-            }
-        }
-        return -1; // 未找到可用端口
     }
 
     public static synchronized String[] getTokenArray() {
@@ -98,20 +70,20 @@ public class ChatSmith {
             URL url = new URL("https://api.vulcanlabs.co/smith-auth/api/v1/token");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("X-Vulcan-Application-ID", "com.smartwidgetlabs.chatgpt");
+            connection.setRequestProperty("X-Vulcan-Application-ID", VULCAN_APPLICATION_ID);
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "Chat Smith Android, Version 3.9.5(669)");
+            connection.setRequestProperty("User-Agent", USER_AGENT);
             connection.setRequestProperty("X-Vulcan-Request-ID", "914948789" + Instant.now().getEpochSecond());
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setDoOutput(true);
-            // 发送请求体
+
             JSONObject jsonInput = new JSONObject();
-            jsonInput.put("device_id", "3D773885E5B4537A");
+            jsonInput.put("device_id", "C8DC43F3FBE1ADB9");
             jsonInput.put("order_id", "");
             jsonInput.put("product_id", "");
             jsonInput.put("purchase_token", "");
             jsonInput.put("subscription_id", "");
-            // 写入请求体
+
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = jsonInput.toString().getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
@@ -136,7 +108,6 @@ public class ChatSmith {
                 return new String[]{newAccessToken, String.valueOf(newExpiration)};
             } else {
                 System.err.println("Token 请求失败，响应码: " + responseCode);
-                // 读取错误响应体
                 InputStream errorStream = connection.getErrorStream();
                 if (errorStream != null) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream, StandardCharsets.UTF_8));
@@ -161,7 +132,6 @@ public class ChatSmith {
             if (tokenData != null) {
                 accessToken = tokenData[0];
                 tokenExpiration = Long.parseLong(tokenData[1]);
-//                System.out.println("获取新的 token: " + accessToken);
                 System.out.println("Got new token: " + accessToken);
             } else {
                 System.err.println("无法获取 token");
@@ -170,11 +140,9 @@ public class ChatSmith {
         return accessToken;
     }
 
-
     static class CompletionHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            // 设置 CORS 头
             Headers headers = exchange.getResponseHeaders();
             headers.add("Access-Control-Allow-Origin", "*");
             headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -187,7 +155,6 @@ public class ChatSmith {
                 return;
             }
             if ("GET".equals(requestMethod)) {
-                //Welcome to the chatgpt API,HTML page
                 String response = "<html><head><title>Welcome to the ChatGPT API</title></head><body><h1>Welcome to the ChatGPT API</h1><p>This API is used to interact with the ChatGPT model. You can send messages to the model and receive responses.";
 
                 exchange.getResponseHeaders().add("Content-Type", "text/html");
@@ -211,8 +178,8 @@ public class ChatSmith {
 
             String token = getValidToken();
             if (token == null) {
-//                sendError(exchange, "无法获取有效的 token");
                 System.out.println("Failed to get a valid token.");
+                sendError(exchange, "无法获取有效的 token");
                 return;
             }
 
@@ -221,6 +188,8 @@ public class ChatSmith {
 
                 boolean hasImageUrl = false;
                 String visionApiResponse = null;
+                byte[] imageData = null;
+                String contentText = "";
 
                 if (requestJson.has("messages")) {
                     JSONArray messages = requestJson.getJSONArray("messages");
@@ -229,8 +198,7 @@ public class ChatSmith {
                         JSONObject message = (JSONObject) iterator.next();
                         if (message.has("content")) {
                             Object contentObj = message.get("content");
-                            if (contentObj instanceof JSONArray) {
-                                JSONArray contentArray = (JSONArray) contentObj;
+                            if (contentObj instanceof JSONArray contentArray) {
                                 StringBuilder contentBuilder = new StringBuilder();
                                 for (int j = 0; j < contentArray.length(); j++) {
                                     JSONObject contentItem = contentArray.getJSONObject(j);
@@ -241,12 +209,21 @@ public class ChatSmith {
                                         hasImageUrl = true;
                                         JSONObject imageUrlObj = contentItem.getJSONObject("image_url");
                                         String dataUrl = imageUrlObj.getString("url");
-                                        String savedFilePath = decodeAndSaveImage(dataUrl);
-
-                                        if (savedFilePath != null) {
-                                            MAX_IMAGE_HEIGHT = 2000;
-                                            MAX_IMAGE_WIDTH = 2000;
-                                            visionApiResponse = sendImagePostRequest(savedFilePath, contentBuilder.toString());
+                                        if (dataUrl.startsWith("data:image/")) {
+                                            imageData = decodeImageData(dataUrl);
+                                        } else if (dataUrl.startsWith("http")) {
+                                            imageData = downloadImageData(dataUrl);
+                                        }
+                                        if (imageData != null) {
+                                            // 检查并缩放图像
+                                            try {
+                                                byte[] processedImageData = ImageUtils.checkAndScaleImage(imageData, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
+                                                visionApiResponse = sendImagePostRequest(processedImageData, contentBuilder.toString());
+                                            } catch (IOException e) {
+                                                System.err.println("图像处理失败: " + e.getMessage());
+                                                sendError(exchange, "图像处理失败: " + e.getMessage());
+                                                return;
+                                            }
                                         }
                                     }
                                     if (j < contentArray.length() - 1) {
@@ -256,32 +233,30 @@ public class ChatSmith {
                                 String extractedContent = contentBuilder.toString().trim();
                                 if (extractedContent.isEmpty()) {
                                     iterator.remove();
-//                                    System.out.println("删除了内容为空的消息。");
                                     System.out.println("Deleted message with empty content.");
                                 } else {
                                     message.put("content", extractedContent);
-//                                    System.out.println("提取并替换了 content: " + extractedContent);
                                     System.out.println("Extracted and replaced content: " + extractedContent);
+                                    contentText = extractedContent;
                                 }
                             } else if (contentObj instanceof String) {
                                 String contentStr = ((String) contentObj).trim();
                                 if (contentStr.isEmpty()) {
                                     iterator.remove();
-//                                    System.out.println("删除了内容为空的消息。");
                                     System.out.println("Deleted message with empty content.");
                                 } else {
                                     message.put("content", contentStr);
-//                                    System.out.println("保留了内容: " + contentStr);
                                     System.out.println("Retained content: " + contentStr);
+                                    contentText = contentStr;
                                 }
                             } else {
                                 iterator.remove();
-                                System.out.println("删除了非预期类型的内容消息。");
+                                System.out.println("Deleted message with unexpected content type.");
                             }
                         }
                     }
 
-                    if (messages.length() == 0) {
+                    if (messages.isEmpty()) {
                         sendError(exchange, "所有消息的内容均为空。");
                         return;
                     }
@@ -311,8 +286,6 @@ public class ChatSmith {
                                 os.write(openAIResponseString.getBytes(StandardCharsets.UTF_8));
                             }
                         }
-
-                        System.out.println("返回 Vision API 的响应，并跳过普通聊天完成处理。");
                         return;
                     } else {
                         sendError(exchange, "处理图像时发生错误。");
@@ -326,16 +299,14 @@ public class ChatSmith {
                 }
 
                 requestJson.put("nsfw_check", false);
-
+                requestJson.put("model", "gpt-4o");
                 if (requestJson.has("temperature")) {
                     double tempDouble = requestJson.getDouble("temperature");
                     int tempInt = (int) Math.round(tempDouble);
                     requestJson.put("temperature", tempInt);
-//                    System.out.println("已将 temperature 从 " + tempDouble + " 转换为 " + tempInt);
                     System.out.println("Converted temperature from " + tempDouble + " to " + tempInt);
                 } else {
                     requestJson.put("temperature", 1);
-//                    System.out.println("未提供 temperature，设置为默认值 1");
                     System.out.println("Temperature not provided, set to default value 1");
                 }
 
@@ -343,11 +314,9 @@ public class ChatSmith {
                     double topPDouble = requestJson.getDouble("top_p");
                     int topPInt = (int) Math.round(topPDouble);
                     requestJson.put("top_p", topPInt);
-//                    System.out.println("已将 top_p 从 " + topPDouble + " 转换为 " + topPInt);
                     System.out.println("Converted top_p from " + topPDouble + " to " + topPInt);
                 } else {
                     requestJson.put("top_p", 1);
-//                    System.out.println("未提供 top_p，设置为默认值 1");
                     System.out.println("Top_p not provided, set to default value 1");
                 }
 
@@ -373,6 +342,7 @@ public class ChatSmith {
 
         private void handleVisionStreamResponse(HttpExchange exchange, JSONObject visionJson) throws IOException {
             String assistantContent = "";
+            System.out.println(visionJson.toString(4));
             if (visionJson.has("choices") && !visionJson.isNull("choices")) {
                 JSONArray choices = visionJson.getJSONArray("choices");
                 for (int i = 0; i < choices.length(); i++) {
@@ -385,8 +355,6 @@ public class ChatSmith {
                     }
                 }
             } else {
-                MAX_IMAGE_HEIGHT -= 500;
-                MAX_IMAGE_WIDTH -= 500;
                 System.err.println("Vision API 响应中缺少 'choices' 字段或其为 null.");
                 sendError(exchange, "Vision API 响应中缺少 'choices' 字段或其为 null.");
                 return;
@@ -431,7 +399,7 @@ public class ChatSmith {
                 sseJson.put("created", visionJson.optLong("created", Instant.now().getEpochSecond()));
                 sseJson.put("id", visionJson.optString("id", ""));
                 sseJson.put("model", visionJson.optString("model", "gpt-4o"));
-                sseJson.put("system_fingerprint", "fp_"+UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+                sseJson.put("system_fingerprint", "fp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
 
                 String sseLine = "data: " + sseJson.toString() + "\n\n";
                 os.write(sseLine.getBytes(StandardCharsets.UTF_8));
@@ -448,7 +416,7 @@ public class ChatSmith {
             adjustedResponse.put("id", apiResponse.optString("id", ""));
             adjustedResponse.put("object", apiResponse.optString("object", ""));
             adjustedResponse.put("created", apiResponse.optLong("created", Instant.now().getEpochSecond()));
-            adjustedResponse.put("model", "gpt-4o");
+            adjustedResponse.put("model", "gpt-4o-mini-2024-07-18");
 
             JSONObject usage = apiResponse.optJSONObject("usage");
             if (usage != null) {
@@ -506,7 +474,7 @@ public class ChatSmith {
             return adjustedResponse;
         }
 
-        private String decodeAndSaveImage0(String dataUrl) {
+        private byte[] decodeImageData(String dataUrl) {
             try {
                 String[] parts = dataUrl.split(",");
                 if (parts.length != 2) {
@@ -515,86 +483,40 @@ public class ChatSmith {
                 }
                 String base64Data = parts[1];
                 byte[] imageBytes = java.util.Base64.getDecoder().decode(base64Data);
-
-                // 读取图片为 BufferedImage
-                ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes);
-                BufferedImage originalImage = ImageIO.read(bis);
-                if (originalImage == null) {
-                    System.err.println("无法读取图片数据。");
-                    return null;
-                }
-
-                // 调整图片尺寸
-                BufferedImage resizedImage = resizeImage0(originalImage, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
-
-                // 生成唯一文件名
-                String fileName = "image_" + UUID.randomUUID().toString() + ".png";
-                Path outputPath = Paths.get(IMAGE_DIRECTORY, fileName);
-                File outputFile = outputPath.toFile();
-
-                // 保存调整后的图片
-                ImageIO.write(resizedImage, "png", outputFile);
-
-                System.out.println("图像已保存为: " + outputFile.getAbsolutePath());
-
-                // 执行自动清理
-                cleanupImages();
-
-                return outputFile.getAbsolutePath();
+                return imageBytes;
             } catch (IllegalArgumentException e) {
                 System.err.println("Base64 解码失败: " + e.getMessage());
                 return null;
-            } catch (IOException e) {
-                System.err.println("保存图像文件失败: " + e.getMessage());
-                return null;
             }
         }
-        private String decodeAndSaveImage(String dataUrl) {
+
+        private byte[] downloadImageData(String imageUrl) {
             try {
-                String[] parts = dataUrl.split(",");
-                if (parts.length != 2) {
-                    System.err.println("无效的 data URL 格式。");
+                URL url = new URL(imageUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.connect();
+                int responseCode = conn.getResponseCode();
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    System.err.println("Failed to download image, response code: " + responseCode);
                     return null;
                 }
-                String base64Data = parts[1];
-                byte[] imageBytes = java.util.Base64.getDecoder().decode(base64Data);
-
-                // 使用 ImageIO 读取图片为 BufferedImage
-                ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes);
-                BufferedImage originalImage = ImageIO.read(bis);
-                if (originalImage == null) {
-                    System.err.println("无法读取图片数据。");
-                    return null;
+                InputStream is = conn.getInputStream();
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, n);
                 }
-
-                // 调整图片尺寸
-                BufferedImage resizedImage = resizeImage(originalImage, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
-
-                // 生成唯一文件名
-                String fileName = "image_" + UUID.randomUUID().toString() + ".png";
-                Path outputPath = Paths.get(IMAGE_DIRECTORY, fileName);
-                File outputFile = outputPath.toFile();
-
-                // 保存调整后的图片
-                ImageIO.write(resizedImage, "png", outputFile);
-
-                System.out.println("图像已保存为: " + outputFile.getAbsolutePath());
-
-                // 执行自动清理
-                cleanupImages();
-
-                return outputFile.getAbsolutePath();
-            } catch (IllegalArgumentException e) {
-                System.err.println("Base64 解码失败: " + e.getMessage());
-                return null;
+                is.close();
+                return baos.toByteArray();
             } catch (IOException e) {
-                System.err.println("保存图像文件失败: " + e.getMessage());
+                System.err.println("Failed to download image: " + e.getMessage());
                 return null;
             }
         }
 
-
-        private String sendImagePostRequest(String filePath, String content) {
+        private String sendImagePostRequest(byte[] imageData, String content) {
             String boundary = "----WebKitFormBoundary" + UUID.randomUUID().toString().replace("-", "");
             String LINE_FEED = "\r\n";
 
@@ -602,11 +524,8 @@ public class ChatSmith {
                 URL url = new URL("https://api.vulcanlabs.co/smith-v2/api/v7/vision_android");
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
-                connection.setDoOutput(true);
-                connection.setUseCaches(false);
-                connection.setRequestProperty("X-Auth-Token", "DbzZaqCS/qzVIre/loqu2AShmtpU5E54znD9GSKkbcT/+jJ2KRFfBia55wzpDQqPzTOLdIkM/0c5zrei+RXk6uMyCeDJQ6HcJTRYtZOvC5vZXULvZK7gEM0tXy1UlQJtZoI37damlysxuNl/QwZ3khY0EtWRJOdRC2qIE90dNfo=");
+                connection.setRequestProperty("X-Auth-Token", "YOUR_AUTH_TOKEN");
                 connection.setRequestProperty("Authorization", "Bearer " + getValidToken());
-                connection.setRequestProperty("X-Firebase-AppCheck-Error", "-9%3A+Integrity+API+error+%28-9%29%3A+Binding+to+the+service+in+the+Play+Store+has+failed.+This+can+be+due+to+having+an+old+Play+Store+version+installed+on+the+device.%0AAsk+the+user+to+update+Play+Store.%0A+%28https%3A%2F%2Fdeveloper.android.com%2Freference%2Fcom%2Fgoogle%2Fandroid%2Fplay%2Fcore%2Fintegrity%2Fmodel%2FIntegrityErrorCode.html%23CANNOT_BIND_TO_SERVICE%29.");
                 connection.setRequestProperty("X-Vulcan-Application-ID", "com.smartwidgetlabs.chatgpt");
                 connection.setRequestProperty("Accept", "application/json");
                 connection.setRequestProperty("User-Agent", "Chat Smith Android, Version 3.9.5(669)");
@@ -615,11 +534,18 @@ public class ChatSmith {
                 connection.setRequestProperty("Accept-Encoding", "gzip");
                 connection.setRequestProperty("Host", "api.vulcanlabs.co");
                 connection.setRequestProperty("Connection", "Keep-Alive");
+                connection.setDoOutput(true);
+                connection.setUseCaches(false);
+
+                // 获取图像格式
+                ImageInfo imageInfo = Imaging.getImageInfo(imageData);
+                ImageFormat format = imageInfo.getFormat();
+                String formatName = format.getName().toLowerCase();
+                String fileName = "image." + formatName;
 
                 try (OutputStream outputStream = connection.getOutputStream();
                      DataOutputStream writer = new DataOutputStream(outputStream)) {
 
-                    // 构建 JSON 数据
                     JSONObject dataObject = new JSONObject();
                     dataObject.put("model", "gpt-4o");
                     dataObject.put("user", "71D1A17A547F1E22");
@@ -635,7 +561,7 @@ public class ChatSmith {
 
                     String jsonData = dataObject.toString();
 
-                    // 添加 'data' 字段
+                    // 添加 JSON 数据部分
                     writer.writeBytes("--" + boundary + LINE_FEED);
                     writer.writeBytes("Content-Disposition: form-data; name=\"data\"" + LINE_FEED);
                     writer.writeBytes("Content-Type: application/json; charset=utf-8" + LINE_FEED);
@@ -643,27 +569,18 @@ public class ChatSmith {
                     writer.write(jsonData.getBytes(StandardCharsets.UTF_8));
                     writer.writeBytes(LINE_FEED);
 
-                    // 添加图片文件
+                    // 添加图像部分
                     writer.writeBytes("--" + boundary + LINE_FEED);
-                    writer.writeBytes("Content-Disposition: form-data; name=\"images[]\"; filename=\"" + new File(filePath).getName() + "\"" + LINE_FEED);
-                    writer.writeBytes("Content-Type: image/png" + LINE_FEED);
+                    writer.writeBytes("Content-Disposition: form-data; name=\"images[]\"; filename=\"" + fileName + "\"" + LINE_FEED);
+                    writer.writeBytes("Content-Type: image/" + formatName + LINE_FEED);
+                    writer.writeBytes(LINE_FEED);
+                    writer.write(imageData);
                     writer.writeBytes(LINE_FEED);
 
-                    try (FileInputStream fis = new FileInputStream(filePath)) {
-                        byte[] buffer = new byte[4096];
-                        int bytesRead;
-                        while ((bytesRead = fis.read(buffer)) != -1) {
-                            writer.write(buffer, 0, bytesRead);
-                        }
-                    }
-                    writer.writeBytes(LINE_FEED);
-
-                    // 结束边界
                     writer.writeBytes("--" + boundary + "--" + LINE_FEED);
                     writer.flush();
                 }
 
-                // 处理响应
                 int responseCode = connection.getResponseCode();
                 InputStream responseStream = (responseCode >= 200 && responseCode < 300) ?
                         connection.getInputStream() : connection.getErrorStream();
@@ -679,12 +596,13 @@ public class ChatSmith {
                     response.append(line);
                 }
 
-//                System.out.println("Received Response from Vision API: " + response.toString());
                 return response.toString();
 
             } catch (IOException e) {
                 System.err.println("发送图像 POST 请求失败: " + e.getMessage());
                 return null;
+            } catch (ImageReadException e) {
+                throw new RuntimeException(e);
             }
         }
 
@@ -720,32 +638,33 @@ public class ChatSmith {
             while ((line = reader.readLine()) != null) {
                 response.append(line);
             }
-
-            System.out.println("Received Response from API: " + response.toString());
-
-            JSONObject apiResponse;
             try {
-                apiResponse = new JSONObject(response.toString());
+
+                JSONObject apiResponse = new JSONObject(response.toString());
+                System.out.println("Received Response from API: \n" + apiResponse.toString(4));
+
+
+                if (apiResponse.has("error") && !apiResponse.isNull("error")) {
+                    JSONObject errorObj = apiResponse.getJSONObject("error");
+                    String errorMessage = errorObj.optString("message", "未知错误");
+                    sendError(exchange, "API 错误: " + errorMessage);
+                    return;
+                }
+
+                JSONObject adjustedResponse = buildOpenAIResponse(apiResponse);
+                String adjustedResponseString = adjustedResponse.toString();
+                System.out.println("adjustedResponseString:\n"+adjustedResponse.toString(4));
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+//                exchange.sendResponseHeaders(200, adjustedResponseString.getBytes(StandardCharsets.UTF_8).length);
+                exchange.sendResponseHeaders(200, apiResponse.toString().getBytes(StandardCharsets.UTF_8).length);
+                try (OutputStream os = exchange.getResponseBody()) {
+//                os.write(adjustedResponseString.getBytes(StandardCharsets.UTF_8));
+                    os.write(apiResponse.toString().getBytes(StandardCharsets.UTF_8));
+                }
             } catch (JSONException je) {
                 System.err.println("目标 API 返回的响应不是有效的 JSON.");
                 sendError(exchange, "目标 API 返回的响应不是有效的 JSON.");
                 return;
-            }
-
-            if (apiResponse.has("error") && !apiResponse.isNull("error")) {
-                JSONObject errorObj = apiResponse.getJSONObject("error");
-                String errorMessage = errorObj.optString("message", "未知错误");
-                sendError(exchange, "API 错误: " + errorMessage);
-                return;
-            }
-
-            JSONObject adjustedResponse = buildOpenAIResponse(apiResponse);
-            String adjustedResponseString = adjustedResponse.toString();
-
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, adjustedResponseString.getBytes(StandardCharsets.UTF_8).length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(adjustedResponseString.getBytes(StandardCharsets.UTF_8));
             }
         }
 
@@ -862,7 +781,7 @@ public class ChatSmith {
 
                 sseJson.put("created", apiResponse.optLong("created", Instant.now().getEpochSecond()));
                 sseJson.put("id", apiResponse.optString("id", ""));
-                sseJson.put("model", apiResponse.optString("model", "gpt-4o"));
+                sseJson.put("model", apiResponse.optString("model", "gpt-4o-mini-2024-07-18"));
                 sseJson.put("system_fingerprint", "fp_67802d9a6d");
 
                 String sseLine = "data: " + sseJson.toString() + "\n\n";
@@ -891,94 +810,6 @@ public class ChatSmith {
             exchange.sendResponseHeaders(500, bytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(bytes);
-            }
-        }
-
-        private BufferedImage resizeImage0(BufferedImage originalImage, int maxWidth, int maxHeight) {
-            int originalWidth = originalImage.getWidth();
-            int originalHeight = originalImage.getHeight();
-
-            // 计算缩放比例
-            double widthRatio = (double) maxWidth / originalWidth;
-            double heightRatio = (double) maxHeight / originalHeight;
-            double scaleFactor = Math.min(widthRatio, heightRatio);
-            System.out.println("图像已调整大小为: " + (int) (originalWidth * scaleFactor) + "x" + (int) (originalHeight * scaleFactor));
-            // 如果图片已经符合尺寸要求，则无需缩放
-            if (scaleFactor >= 1.0) {
-                return originalImage;
-            }
-
-            // 使用imgscalr库缩放图像
-            return Scalr.resize(originalImage, Scalr.Method.QUALITY, (int) (originalWidth * scaleFactor), (int) (originalHeight * scaleFactor));
-        }
-
-        /**
-         * 使用 imgscalr 库调整图像大小
-         */
-        private BufferedImage resizeImage(BufferedImage originalImage, int maxWidth, int maxHeight) {
-            // 计算缩放比例
-            int originalWidth = originalImage.getWidth();
-            int originalHeight = originalImage.getHeight();
-            double widthRatio = (double) maxWidth / originalWidth;
-            double heightRatio = (double) maxHeight / originalHeight;
-            double scaleFactor = Math.min(widthRatio, heightRatio);
-
-            // 如果图片已经符合尺寸要求，则无需缩放
-            if (scaleFactor >= 1.0) {
-                return originalImage;
-            }
-
-            int newWidth = (int) (originalWidth * scaleFactor);
-            int newHeight = (int) (originalHeight * scaleFactor);
-
-            // 使用 imgscalr 进行高质量缩放
-            BufferedImage resizedImage = Scalr.resize(originalImage, Scalr.Method.QUALITY, Scalr.Mode.AUTOMATIC, newWidth, newHeight);
-
-            System.out.println("图像已调整大小为: " + newWidth + "x" + newHeight);
-            return resizedImage;
-        }
-
-
-        // 新增：自动删除过期图片以保持目录中图片数量不超过MAX_IMAGES
-        private void cleanupImages() {
-            try {
-                Path imageDir = Paths.get(IMAGE_DIRECTORY);
-                if (!Files.exists(imageDir) || !Files.isDirectory(imageDir)) {
-                    System.err.println("图片目录不存在或不是一个目录。");
-                    return;
-                }
-
-                // 获取所有图片文件，按最后修改时间排序
-                List<Path> imageFiles = new ArrayList<>();
-                try (DirectoryStream<Path> stream = Files.newDirectoryStream(imageDir, "*.png")) {
-                    for (Path entry : stream) {
-                        imageFiles.add(entry);
-                    }
-                }
-
-                // 按最后修改时间升序排序（最早的在前）
-                imageFiles.sort(Comparator.comparingLong(this::getLastModifiedTime));
-
-                // 如果超过最大数量，则删除最早的文件
-                while (imageFiles.size() > MAX_IMAGES) {
-                    Path oldestFile = imageFiles.remove(0);
-                    try {
-                        Files.deleteIfExists(oldestFile);
-                        System.out.println("已删除过期图片: " + oldestFile.toAbsolutePath());
-                    } catch (IOException e) {
-                        System.err.println("无法删除文件 " + oldestFile.toAbsolutePath() + ": " + e.getMessage());
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("清理图片时发生错误: " + e.getMessage());
-            }
-        }
-
-        private long getLastModifiedTime(Path path) {
-            try {
-                return Files.getLastModifiedTime(path).toMillis();
-            } catch (IOException e) {
-                return Long.MAX_VALUE;
             }
         }
     }
