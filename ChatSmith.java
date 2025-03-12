@@ -15,7 +15,7 @@ import org.json.*;
 import com.sun.net.httpserver.*;
 
 public class ChatSmith {
-    public static int port = 80;
+    public static int port = 7860;
     private static String accessToken = null;
     private static long tokenExpiration = 0;
     public static final int MAX_IMAGE_WIDTH = 2000;
@@ -46,7 +46,7 @@ public class ChatSmith {
 
     public static void main(String[] args) {
 
-        int port = 80;
+        int port = 7860;
 
         if (args.length > 0) {
             port = Integer.parseInt(args[0]);
@@ -54,8 +54,8 @@ public class ChatSmith {
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
             HttpServer server = createHttpServer(port);
-            server.createContext("/v1/chat/completions", new CompletionHandler());
-            server.createContext("/v1/images/generations", new TextToImageHandler());
+            server.createContext("/hf/v1/chat/completions", new CompletionHandler());
+            server.createContext("/hf/v1/images/generations", new TextToImageHandler());
             server.createContext("/", new CompletionHandler());
 
             server.setExecutor(executor);
